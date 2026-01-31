@@ -1,2 +1,2 @@
 # Robotics
-This is a repository creasted for the use of UTRA hackathon.
+This is a repository created for the use of UTRA hackathon.

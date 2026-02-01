@@ -1,7 +1,7 @@
 # Robotics
 This is a repository created for the use of UTRA hackathon.
 
-# 🚗 Wall e - Smart Interactive Car  
+# 🚗 Wall•e - Smart Interactive Car  
 ### Voice & Gesture Controlled Autonomous Vehicle  
 
 ## 🧠 Overview  

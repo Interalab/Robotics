@@ -5,10 +5,10 @@ from elevenlabs.client import ElevenLabs
 import os
 
 # 1. Setup Gemini Client (2026 Modern SDK)
+# 注意：新版 SDK 不再使用 genai.configure，而是直接在 Client 里传入 API Key
+gemini_client = genai.Client(api_key="AIzaSyB6MhAAW3IeepXLlwNd8YmPS1GscfjVYHI")
 
-gemini_client = genai.Client(api_key="AIzaSyBDxPBWLsEfM7d6r6Vv6gwaxH-FbuicnXQ")
-
-
+# 使用你要求的 Gemini 3 Flash 模型
 MODEL_ID = "gemini-3-flash-preview" 
 
 # 2. Setup ElevenLabs Client
@@ -20,7 +20,7 @@ def text_to_speech(text):
     print("[Status] Converting text to speech...")
     try:
         response = el_client.text_to_speech.convert(
-            voice_id="21m00Tcm4TlvDq8ikWAM",
+            voice_id="cgSgspJ2msm6clMCkdW9",
             text=text,
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128"
@@ -36,7 +36,7 @@ def text_to_speech(text):
         # Mac
         subprocess.run(["afplay", "reply.mp3"])
 
-        # Windows
+        # Windows 用：
         # subprocess.run(["start", "reply.mp3"], shell=True)
 
     except Exception as e:
@@ -55,14 +55,14 @@ def listen_and_talk():
             audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
             print("[Status] Recognizing speech...")
             
-            # vocie to text
+            # 语音转文字 (English)
             user_text = recognizer.recognize_google(audio, language='en-US')
             print(f"-> You said: {user_text}")
             
-            # generate response from Gemini
+            # 生成 AI 回答
             print("[Status] Gemini is thinking...")
             try:
-                
+                # 注意新版 SDK 调用 generate_content 的语法
                 response = gemini_client.models.generate_content(
                     model=MODEL_ID,
                     contents=user_text,
@@ -71,7 +71,7 @@ def listen_and_talk():
                 reply_text = response.text
                 print(f"\n[Gemini]: {reply_text}")
                 
-                # use reply text to generate speech
+                # 语音合成输出
                 text_to_speech(reply_text)
                 
             except Exception as e:

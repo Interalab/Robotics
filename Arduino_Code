@@ -1,0 +1,280 @@
+// ===== MOTOR PINS =====
+#define IN1 4
+#define IN2 5
+#define IN3 6
+#define IN4 7
+
+// ===== ULTRASONIC PINS =====
+#define TRIG 12
+#define ECHO 11
+
+// ===== COLOR SENSOR PINS (TCS3200) =====
+#define S0 2
+#define S1 3
+#define S2 A0
+#define S3 A1
+#define COLOR_OUT A2
+
+int mode = 0; // 0 = Manual, 1 = Auto
+
+void setup() {
+  Serial.begin(9600);
+
+  // Initialize Motor Pins
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  // Initialize Ultrasonic Pins
+  pinMode(TRIG, OUTPUT);
+  pinMode(ECHO, INPUT);
+
+  // Initialize Color Sensor Pins
+  pinMode(S0, OUTPUT);
+  pinMode(S1, OUTPUT);
+  pinMode(S2, OUTPUT);
+  pinMode(S3, OUTPUT);
+  pinMode(COLOR_OUT, INPUT);
+
+  // Set TCS3200 Frequency Scaling to 20%
+  // IMPORTANT: Do not change this, thresholds are calibrated for 20%
+  digitalWrite(S0, HIGH);
+  digitalWrite(S1, LOW);
+
+  stopMotor();
+
+  Serial.println("===== ROBOT READY (English Version) =====");
+  Serial.println("w/s/a/d : Move Manually");
+  Serial.println("x       : Stop");
+  Serial.println("1       : Auto Mode (Obstacle + Color)");
+  Serial.println("0       : Manual Mode");
+  Serial.println("r       : Read Color Data");
+  Serial.println("p       : Read Distance");
+}
+
+void loop() {
+  // Serial Command Handling
+  if (Serial.available()) {
+    char cmd = Serial.read();
+
+    if (cmd == '0') {
+      mode = 0;
+      stopMotor();
+      Serial.println("MODE: MANUAL");
+    }
+    else if (cmd == '1') {
+      mode = 1;
+      Serial.println("MODE: AUTO");
+    }
+    else if (cmd == 'w') forward();
+    else if (cmd == 's') backward();
+    else if (cmd == 'a') left();
+    else if (cmd == 'd') right();
+    else if (cmd == 'x') stopMotor();
+    else if (cmd == 'r') {
+      Serial.print("COLOR DETECTED: ");
+      Serial.println(getColor());
+    }
+    else if (cmd == 'p') {
+      Serial.print("DISTANCE: ");
+      Serial.print(getDist());
+      Serial.println(" cm");
+    }
+  }
+
+  // Execute Auto Logic if in Mode 1
+  if (mode == 1) autoRun();
+
+  // Small delay for stability
+  delay(30);
+}
+
+void autoRun() {
+  float dist = getDist();
+  String color = getColor();
+
+  // Debug output
+  Serial.print("D=");
+  Serial.print(dist);
+  Serial.print(" C=");
+  Serial.println(color);
+
+  // ==========================================
+  // 1. OBSTACLE AVOIDANCE (Priority High)
+  // ==========================================
+  if (dist < 15 && dist > 1) {
+    // If obstacle is closer than 15cm
+    stopMotor();
+    delay(200);
+
+    // Evasive Maneuver: Turn Right -> Forward -> Turn Left
+    right();
+    delay(1000); // Adjust time to change turn angle
+
+    stopMotor();
+    delay(150);
+
+    forward();
+    delay(2000); // Move past the obstacle
+
+    stopMotor();
+    delay(150);
+
+    left();
+    delay(1000); // Try to return to path
+
+    stopMotor();
+    delay(150);
+  }
+  // ==========================================
+  // 2. COLOR LOGIC
+  // ==========================================
+  else if (color == "BLACK") {
+    // Black line or boundary detected -> STOP
+    stopMotor();
+    Serial.println("BLACK DETECTED - STOPPING");
+  }
+  else if (color == "BLUE") {
+    // Blue detected -> GO
+    forward();
+  }
+  else if (color == "RED" || color == "GREEN") {
+    // Red or Green detected -> Slow down/Stutter (Move + Pause)
+    forward();
+    delay(50);
+    stopMotor();
+    delay(50);
+  }
+  else {
+    // White or Unknown -> Default Forward
+    forward();
+  }
+}
+
+float getDist() {
+  digitalWrite(TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+
+  // Timeout set to 25ms (~4 meters max)
+  long duration = pulseIn(ECHO, HIGH, 25000);
+  
+  if (duration == 0) return 999; // Return 999 if no echo (too far)
+  return duration * 0.034 / 2;
+}
+
+// ====================================================
+// CORE COLOR LOGIC (Calibrated based on your data)
+// ====================================================
+String getColor() {
+  int r = readColorCount(LOW, LOW);   // Read Red
+  int g = readColorCount(HIGH, HIGH); // Read Green
+  int b = readColorCount(LOW, HIGH);  // Read Blue
+
+  // Print Raw Data for Debugging
+  Serial.print("R:"); Serial.print(r);
+  Serial.print(" G:"); Serial.print(g);
+  Serial.print(" B:"); Serial.print(b);
+  Serial.print(" -> ");
+
+  // ------------------------------------------
+  // 1. WHITE DETECTION (Highest Brightness)
+  // ------------------------------------------
+  // Observation: Your white data has R, G, B all > 5000.
+  if (r > 4000 && g > 4000 && b > 4000) {
+    return "WHITE";
+  }
+
+  // ------------------------------------------
+  // 2. RED DETECTION
+  // ------------------------------------------
+  // Observation: Red channel (~4400) is much higher than G and B (~1000).
+  if (r > 2500 && r > g && r > b) {
+    return "RED";
+  }
+
+  // ------------------------------------------
+  // 3. BLUE DETECTION
+  // ------------------------------------------
+  // Observation: Blue object is dark (B~750), but B is higher than 
+  // the Black floor (B~540) and Green object (B~480).
+  // Threshold > 650 safely separates Blue from Black/Green.
+  if (b > 650) {
+    return "BLUE";
+  }
+
+  // ------------------------------------------
+  // 4. BLACK (FLOOR) DETECTION
+  // ------------------------------------------
+  // CRITICAL: Your floor data (R~640) is actually BRIGHTER 
+  // than your Green object (R~470).
+  // Logic: If it's not White/Red/Blue, and R is still > 550, it is the Floor.
+  if (r > 550) {
+    return "BLACK";
+  }
+
+  // ------------------------------------------
+  // 5. GREEN DETECTION
+  // ------------------------------------------
+  // Observation: Your Green object is the darkest of all (R~470, G~440).
+  // Logic: By elimination, the darkest remaining object is Green.
+  return "GREEN";
+}
+
+// Helper function to read frequency from TCS3200
+int readColorCount(bool s2, bool s3) {
+  digitalWrite(S2, s2);
+  digitalWrite(S3, s3);
+  delay(10); // Allow sensor to stabilize
+
+  int count = 0;
+  unsigned long startTime = millis();
+  
+  // Sample for 100ms
+  while (millis() - startTime < 100) { 
+    pulseIn(COLOR_OUT, LOW, 10000);
+    count++;
+  }
+  
+  return count;
+}
+
+// ===== MOTOR CONTROL FUNCTIONS =====
+
+void forward() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+}
+
+void backward() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+}
+
+void left() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+}
+
+void right() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+}
+
+void stopMotor() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+}

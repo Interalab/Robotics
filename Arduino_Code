@@ -1,92 +1,66 @@
-// ===== 2026 HACKATHON ROBOT: BIG ARC VERSION =====
-// Fixes & Improvements:
-// 1. Increased obstacle avoidance turning radius (~20cm) by extending forward motion ratio
-// 2. Extended blind arc driving time to ensure full semi-circle completion
-// 3. Added black start-line detection logic
-// 4. Improved stable line tracking behavior
+// ===== 2026 HACKATHON ROBOT: OFF-ROAD FINAL VERSION =====
+// Key Features:
+// 1. High torque movement tuning for uneven terrain (anti-stuck design)
+// 2. Black-line starting zone detection logic
+// 3. Obstacle avoidance using 90° exit + segmented aggressive return
+//    (Large ~20cm turning radius for stable bypass)
 
-// ================= MOTOR DRIVER PINS =================
 #define IN1 4
 #define IN2 5
 #define IN3 6
 #define IN4 7
 
-// ================= COLOR SENSOR (TCS3200) =================
+// TCS3200 Color Sensor Pins
 #define S0 2
 #define S1 3
 #define S2 A0
 #define S3 A1
 #define COLOR_OUT A2
 
-// ================= ULTRASONIC SENSOR =================
+// Ultrasonic Sensor Pins
 #define TRIG 12
 #define ECHO 11
 
-// Robot operation mode
-// 0 = Manual control
-// 1 = Autonomous competition mode
-int mode = 0;
+int mode = 0; 
+int stage = 0; // 0 = Start Zone Phase, 1 = Competition Phase
 
-// Competition stage control
-// 0 = Start zone (black line detection)
-// 1 = Main competition run
-int stage = 0;
-
-// ================= SYSTEM INITIALIZATION =================
 void setup() {
-
-  // Serial communication for debugging and manual override
   Serial.begin(9600);
 
-  // Motor driver pin configuration
-  pinMode(IN1, OUTPUT); 
-  pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT); 
-  pinMode(IN4, OUTPUT);
+  // Motor driver pins
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
 
   // Color sensor control pins
-  pinMode(S0, OUTPUT); 
-  pinMode(S1, OUTPUT);
-  pinMode(S2, OUTPUT); 
-  pinMode(S3, OUTPUT);
+  pinMode(S0, OUTPUT); pinMode(S1, OUTPUT);
+  pinMode(S2, OUTPUT); pinMode(S3, OUTPUT);
   pinMode(COLOR_OUT, INPUT);
 
   // Ultrasonic sensor pins
   pinMode(TRIG, OUTPUT); 
   pinMode(ECHO, INPUT);
 
-  // TCS3200 frequency scaling configuration (20%)
+  // TCS3200 output frequency scaling set to 20%
   digitalWrite(S0, HIGH);
   digitalWrite(S1, LOW);
 
-  // Ensure robot is stopped at startup
   stopMotor();
-
-  Serial.println("===== BIG ARC READY =====");
+  Serial.println("===== OFF-ROAD MODE READY =====");
 }
 
-// ================= MAIN LOOP =================
 void loop() {
 
-  // Process serial commands for manual override and testing
+  // ===== Manual Control via Serial (Debug Mode) =====
   if (Serial.available()) {
-
     char cmd = Serial.read();
 
-    // Reset system and return to start stage
     if (cmd == '0') { 
-      mode = 0; 
-      stopMotor(); 
-      stage = 0; 
-      Serial.println("RESET -> STAGE 0");
+      mode = 0;
+      stage = 0;
+      stopMotor();
+      Serial.println("SYSTEM RESET -> STAGE 0");
     }
-
-    // Enable autonomous mode
-    else if (cmd == '1') { 
-      mode = 1; 
-    }
-
-    // Manual driving commands
+    else if (cmd == '1') mode = 1;
     else if (cmd == 'w') forward(); 
     else if (cmd == 's') backward();
     else if (cmd == 'a') hardLeft();    
@@ -94,293 +68,150 @@ void loop() {
     else if (cmd == 'x') stopMotor();
   }
 
-  // Run autonomous competition logic
+  // ===== Autonomous Mode =====
   if (mode == 1) {
     competitionRun();
   }
 }
 
-// ================= 🏆 MAIN COMPETITION LOGIC =================
+// =====================================================
+// ================= MAIN COMPETITION LOGIC ============
+// =====================================================
 void competitionRun() {
 
-  // Read sensor values
   float dist = getDist();
   String color = getColor(); 
 
-  // -------- 🏁 STAGE 0: START ZONE (BLACK LINE SEARCH) --------
+  // ---------- STAGE 0 : START ZONE (Black Track Entry) ----------
   if (stage == 0) {
 
-    // Adjust until red line is detected
-    if (color == "BLACK") { 
+    // Adjust direction while following black starting line
+    if (color == "BLACK") {
       softLeft(); 
-      delay(35); 
+      delay(35);
     }
-
-    else if (color == "WHITE") { 
+    else if (color == "WHITE") {
       softRight(); 
-      delay(40); 
+      delay(40);
     }
 
-    // Red line found → switch to main competition mode
+    // Detect red marker → enter competition phase
     else if (color == "RED") {
 
-      Serial.println("SWITCH TO STAGE 1");
+      Serial.println("ENTERING STAGE 1");
 
-      // Move forward to stabilize position
+      // Strong forward push to avoid being stuck at junction
       forward(); 
-      delay(200); 
+      delay(250); 
 
-      // Rotate left to align with red track
+      // Left turn into main track
       hardLeft(); 
-      delay(550); 
+      delay(2800); 
 
-      stage = 1; 
+      stage = 1;
     }
 
     return;
   }
 
-  // -------- 🚩 STAGE 1: MAIN COMPETITION --------
+  // ---------- STAGE 1 : MAIN RACE PHASE ----------
 
-  // 1. OBSTACLE AVOIDANCE (distance trigger < 15cm)
+  // 1. Obstacle detected OR black boundary detected → Avoid
   if (color == "BLACK" || (dist < 15 && dist > 1)) {
-    avoidObstacle_LeftArc(); 
+    avoidObstacle_OffRoad();
     return;
   }
 
-  // 2. BLUE COLOR: Pickup / Pause Zone
+  // 2. Blue zone: Pickup simulation
   if (color == "BLUE") {
-
-    // Simulate grabbing operation
     stopMotor(); 
     delay(3000); 
-
-    // Resume forward motion
     forward(); 
     delay(500); 
-
     return;
   }
-  
-  // 3. GREEN COLOR: Slow speed zone
+
+  // 3. Green zone: Slow movement (speed control)
   if (color == "GREEN") {
-
-    // Gentle left correction with speed reduction
     softLeft(); 
-    delay(30); 
-
+    delay(30);
     stopMotor(); 
-    delay(20); 
+    delay(20);
   }
 
-  // 4. RED / WHITE COLOR: Stable line tracking
+  // 4. Red line tracking
   else if (color == "RED") {
-
-    // Left correction while following red line
     softLeft(); 
-    delay(35); 
+    delay(35);
   }
 
+  // 5. White background → searching for track
   else {
-
-    // Right correction when searching for red line
     softRight(); 
-    delay(40); 
+    delay(40);
   }
 }
 
-// ================= 🔄 LARGE LEFT ARC OBSTACLE AVOIDANCE =================
-// Generates wide radius arc path to safely bypass obstacles
-void avoidObstacle_LeftArc() {
+// =====================================================
+// ================= OFF-ROAD OBSTACLE AVOIDANCE =======
+// =====================================================
+void avoidObstacle_OffRoad() {
 
-  Serial.println(">>> BIG ARC AVOIDANCE");
+  Serial.println(">>> OFF-ROAD OBSTACLE AVOIDANCE");
 
-  // 1. Stop and reverse slightly
+  // Step 1: Strong reverse to escape terrain pits
   stopMotor(); 
   delay(100);
 
   backward();  
-  delay(300);
+  delay(450);
 
-  // 2. Rotate left to face outward direction
+  // Step 2: Pivot left approx. 90 degrees
+  Serial.println(">>> ROTATING LEFT");
   hardLeft(); 
-  delay(650); 
+  delay(2800);
 
-  // 3. BLIND ARC MOVEMENT (large radius semi-circle)
-  Serial.println(">>> BLIND MOVE (20cm Radius)...");
+  // Step 3: Drive forward to clear obstacle width
+  Serial.println(">>> DRIVING OUT");
+  forward();
+  delay(1200);
+
+  // Step 4: Segmented aggressive turning return
+  Serial.println(">>> SEGMENTED RETURN");
 
   unsigned long blindStart = millis();
-  
-  // Extended time to complete large radius turn
-  while (millis() - blindStart < 2800) { 
 
-    // Smooth arc: soft steering + forward motion
-    softRight(); 
-    delay(20); 
+  while (millis() - blindStart < 2500) {
 
+    // Hard steering correction
+    hardRight(); 
+    delay(200);
+
+    // High momentum forward burst
     forward();   
-    delay(50); 
+    delay(350);
   }
 
-  // 4. LINE SEARCH PHASE
-  Serial.println(">>> SEARCHING RED LINE...");
+  // Step 5: Search red line and lock-on
+  Serial.println(">>> SEARCHING TRACK");
 
   unsigned long searchStart = millis();
-  
+
   while (true) {
 
-    // Continue arc motion while scanning for line
-    softRight(); 
-    delay(20);
+    hardRight(); 
+    delay(200);
 
     forward();   
-    delay(50); 
+    delay(300);
 
-    // Stop immediately once red line is detected
+    // Stop immediately when red line found
     if (getColor() == "RED") {
       stopMotor(); 
       delay(100); 
       break;
     }
 
-    // Safety timeout to prevent infinite loop
-    if (millis() - searchStart > 4000) {
-      stopMotor(); 
-      break;
-    }
-  }
-
-  // 5. FINAL REALIGNMENT
-  Serial.println(">>> REALIGN LEFT");
-
-  hardLeft();
-  delay(450); 
-
-  stopMotor();
-  delay(200);
-}
-
-// ================= 🎨 COLOR DETECTION & SENSOR FUNCTIONS =================
-
-// Color classification using frequency-based pulse counting
-String getColor() {
-
-  int r = readColorCountFast(LOW, LOW);
-  int g = readColorCountFast(HIGH, HIGH);
-  int b = readColorCountFast(LOW, HIGH);
-
-  // White floor detection
-  if (g > 2500 && b > 2200 && r > 1800) return "WHITE";
-
-  // Red track detection
-  if (r > 2000 && r > (g + 1000) && g < 1500) return "RED";
-
-  // Green slow zone detection
-  if (g > 1100 && g < 2200 && g > b && g > r) return "GREEN";
-
-  // Black obstacle / start zone detection
-  if (b > g && b > r && b < 1900 && r < 1000) return "BLACK";
-
-  // Blue pickup zone detection
-  if (b > 2500 && b > r && b > g) return "BLUE";
-
-  // Default fallback
-  return "WHITE"; 
-}
-
-// Fast frequency sampling for TCS3200 sensor
-int readColorCountFast(bool s2, bool s3) {
-
-  digitalWrite(S2, s2); 
-  digitalWrite(S3, s3); 
-
-  delay(5); 
-
-  int count = 0; 
-  unsigned long startTime = millis();
-
-  // Count output pulses within fixed time window
-  while (millis() - startTime < 20) { 
-    pulseIn(COLOR_OUT, LOW, 10000); 
-    count++; 
-  }
-
-  // Scale value to improve resolution
-  return count * 5; 
-}
-
-// Ultrasonic distance measurement (returns centimeters)
-float getDist() {
-
-  digitalWrite(TRIG, LOW); 
-  delayMicroseconds(2);
-
-  digitalWrite(TRIG, HIGH); 
-  delayMicroseconds(10);
-
-  digitalWrite(TRIG, LOW);
-
-  long duration = pulseIn(ECHO, HIGH, 15000);
-
-  if (duration == 0) return 999;
-
-  return duration * 0.034 / 2;
-}
-
-// ================= 🚜 MOTOR CONTROL FUNCTIONS =================
-
-// Forward movement
-void forward() {
-  digitalWrite(IN1, HIGH); 
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH); 
-  digitalWrite(IN4, LOW);
-}
-
-// Reverse movement
-void backward() {
-  digitalWrite(IN1, LOW); 
-  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, LOW); 
-  digitalWrite(IN4, HIGH);
-}
-
-// Immediate stop
-void stopMotor() {
-  digitalWrite(IN1, LOW); 
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW); 
-  digitalWrite(IN4, LOW);
-}
-
-// Sharp left turn (in-place rotation)
-void hardLeft() {
-  digitalWrite(IN1, LOW); 
-  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, HIGH); 
-  digitalWrite(IN4, LOW);
-}
-
-// Sharp right turn (in-place rotation)
-void hardRight() {
-  digitalWrite(IN1, HIGH); 
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW); 
-  digitalWrite(IN4, HIGH);
-}
-
-// Soft left curve correction
-void softLeft() {
-  digitalWrite(IN1, LOW); 
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH); 
-  digitalWrite(IN4, LOW);
-}
-
-// Soft right curve correction
-void softRight() {
-  digitalWrite(IN1, HIGH); 
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW); 
-  digitalWrite(IN4, LOW);
-}
+    // Safety timeout protection
+    if (millis() - searchStart > 6000) {
+      stopMotor();

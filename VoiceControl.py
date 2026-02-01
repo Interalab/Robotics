@@ -23,9 +23,9 @@ except Exception as e:
     print(f"[Serial Error] Could not open serial port: {e}")
     ser = None
 
-gemini_client = genai.Client(api_key="AIzaSyBcM6NM1mL_YOWI0jXaJiCsnQn6IbBjZqk")
+gemini_client = genai.Client(api_key="")
 MODEL_ID = "gemini-3-flash-preview" 
-ELEVENLABS_KEY = "sk_23b342462d894f254a2de0a5dc205f4c240dc9aa39a4f713"
+ELEVENLABS_KEY = ""
 el_client = ElevenLabs(api_key=ELEVENLABS_KEY)
 
 COMMAND_MAP = {

@@ -42,9 +42,6 @@ User Input
               ↓
          Smart Car Execution
 
-## 🔧 How to Run the Car
-Here is the updated final section for your **README.md**, detailing how to run the car across its different control modes.
-
 ---
 
 ## 🔧 How to Run the Car
